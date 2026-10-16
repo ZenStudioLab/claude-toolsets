@@ -1,0 +1,3 @@
+[submodule "plugins/effortless"]
+	path = plugins/effortless
+	url = https://github.com/ZenStudioLab/effortless.git
