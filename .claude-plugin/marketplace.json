@@ -1,0 +1,22 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "zenstudiolab",
+  "description": "Third-party Claude Code plugins, each installed from a ZenStudioLab fork pinned to a reviewed commit (see docs/adr/0001-pinned-forks-for-third-party-plugins.md).",
+  "owner": {
+    "name": "ZenStudioLab",
+    "url": "https://github.com/ZenStudioLab"
+  },
+  "plugins": [
+    {
+      "name": "effortless",
+      "description": "Sets the reasoning effort for every prompt and shows a prompt-cache countdown. Fork of HeyCubit/effortless with self-update locked down.",
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/ZenStudioLab/effortless.git",
+        "sha": "9c499da6d133fcac0e0c01636bbf0bf56ed9feec"
+      },
+      "homepage": "https://github.com/ZenStudioLab/effortless"
+    }
+  ]
+}

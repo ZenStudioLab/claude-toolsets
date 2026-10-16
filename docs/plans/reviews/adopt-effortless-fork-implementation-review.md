@@ -333,3 +333,134 @@ CONSENSUS_STATUS=MOSTLY_GOOD
 ### 2.5 push (Orchestrator, after caller PASS)
 - Ran `git -c credential.helper= -c 'credential.helper=!gh auth git-credential' push origin main` in `plugins/effortless`. The `gh` credentials were used for this one command only; global config is unchanged.
 - The remote now shows `bfb85cd..9c499da`. `git ls-remote` reports `ZenStudioLab/effortless` `refs/heads/main` = `9c499da6d133fcac0e0c01636bbf0bf56ed9feec`, equal to the local HEAD.
+
+## Wave 3 Review Sequence
+
+## Round 1 - Implementation Assignments
+
+- **Wave:** 3.x
+- **Final gate reserved:** task 3.5, the Oracle wave gate (`oracle`) for wave 3.
+- **Owner mapping:** 3.1–3.4 are Orchestrator-owned (marketplace pin, `~/.claude` changes, live check, staging). No delegation, so `DISPATCH_BUDGET wave 3: others=0/3` before the gate.
+- **Between-wave reuse:** no worker is needed, and the wave 3 Oracle is fresh.
+
+### 3.1 — Marketplace file (Orchestrator)
+- Wrote `claude-toolsets/.claude-plugin/marketplace.json`:
+  - `name: zenstudiolab`, owner ZenStudioLab;
+  - a single plugin `effortless` with source `{ "source": "url", "url": "https://github.com/ZenStudioLab/effortless.git", "sha": "9c499da6d133fcac0e0c01636bbf0bf56ed9feec" }` and no `ref`.
+  
+  The shape mirrors the `url` entries without `ref` in `claude-plugins-official` (e.g. `agentforce-adlc`).
+- **Checks:**
+  - a Python check confirms the JSON parses, the name is `zenstudiolab`, the plugin list is exactly `['effortless']` (textless absent), the `sha` is 40 hex characters, and there is no `ref`;
+  - `git ls-remote` shows the fork's `refs/heads/main` = `9c499da…`, equal to the pin.
+
+### 3.2 — Local marketplace and install (Orchestrator, approval (d))
+- **Marketplace:** `claude plugin marketplace add /mnt/031D13CB0120451A/Src/Tools/claude/claude-toolsets` reported "Successfully added marketplace: zenstudiolab (declared in user settings)".
+- **Install:** `claude plugin install effortless@zenstudiolab` reported "Successfully installed … (scope: user)". It noted that 16 userConfig options are unset, so the plugin's defaults apply, including judge `auto`.
+- **Marketplace list:** `claude plugin marketplace list` shows `zenstudiolab` (Folder: the `claude-toolsets` path), and neither `effortless` nor `effortless-dev`.
+- **Install record:** `installed_plugins.json` records `effortless@zenstudiolab` with `installPath` `/home/zenji/.claude/plugins/cache/zenstudiolab/effortless/1.71.0` and `gitCommitSha` `9c499da6d133fcac0e0c01636bbf0bf56ed9feec` (carried F5: verified via `gitCommitSha`).
+- **Content check:** all 1002 files tracked at fork HEAD are byte-identical to the installed copy (`cmp`, 0 mismatches).
+- **Global config changes**, made by the Claude Code CLI and snapshotted before and after in `/tmp/*.before.json`:
+  - `~/.claude/settings.json` gained `enabledPlugins["effortless@zenstudiolab"]=true` and `extraKnownMarketplaces.zenstudiolab` (directory source). The CLI reserialised the file, moving some keys, but it is semantically identical otherwise (Python equality check after removing the two additions: `True`).
+  - `known_marketplaces.json` gained `zenstudiolab` only.
+  - `installed_plugins.json` gained `effortless@zenstudiolab` only, with nothing removed.
+
+### 3.3 — Running plugin (Orchestrator)
+- **`/effortless update`:** `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 claude -p "/effortless update"` answers "effortless: effortless: updates are managed by the pinned zenstudiolab marketplace". The env var was set for that command only, as the README's terminal note describes; `settings.json` was not changed for it. The doubled prefix is cosmetic, because the CLI adds the plugin name before the reply text.
+- **`/effortless debug`:** it starts a live session (`session.start 0s ago`) and shows no update-check entry.
+- **No update fetch ran:** `~/.claude/plugins/data/effortless-release-check`, the folder `latestFromGit` creates before any `git fetch`, does not exist after three live sessions.
+- **Pin kept:** `claude plugin update effortless@zenstudiolab` reports "already at the latest version (1.71.0)", and `gitCommitSha` is still `9c499da…`.
+- **Not run:** an interactive desktop or terminal UI check of the "Check for updates" button. It is covered by the locked test in wave 2 instead.
+
+### 3.4 — Staging (Orchestrator)
+- Staged `.claude-plugin/marketplace.json` and this review log. `.gitmodules`, `plugins/effortless` and `docs/adr/0001-*` were already committed in `0c7eae3` and `1179852`.
+- The unrelated untracked `.claude/`, `.pi/`, `openspec/config.yaml`, `openspec/specs/` and `openspec/changes/archive/` are not staged.
+
+## Round 1 - Oracle Review
+
+Mode: `FULL` (first review of wave 3) · Reviewer: `oracle`. The gate consumed is task 3.5, the Oracle wave gate for wave 3. It reviews the marketplace file, the install evidence and the staged scope against the `vetted-plugin-marketplace` spec. Tasks 3.1–3.4 were all done by the Orchestrator, with no delegation (`others=0/3`). I only read state. I ran no install, update, uninstall, `claude -p` or test command.
+
+Wave 3 meets every `vetted-plugin-marketplace` requirement, the carried F5 check holds, and I found no P0, P1 or P2 issue. There are three P3 notes, and none is a defect.
+
+### Requirement check
+
+| Requirement | Evidence | Result |
+|---|---|---|
+| **Marketplace identity** | The staged `.claude-plugin/marketplace.json` has `name: "zenstudiolab"`. `claude plugin marketplace list` shows `zenstudiolab` (Folder: the `claude-toolsets` path). `known_marketplaces.json` keys are `claude-plugins-official, brag, context-mode, hyperframes, zenstudiolab`, with no `effortless` or `effortless-dev` | Met |
+| **Plugins only from our forks** | The single entry's source `url` is `https://github.com/ZenStudioLab/effortless.git` | Met |
+| **Pinned to a full commit** | `sha` is `9c499da6d133fcac0e0c01636bbf0bf56ed9feec` (40 hex), with no `ref`. `git ls-remote` on the fork gives `HEAD` and `refs/heads/main` = `9c499da…` | Met |
+| **Installed copy is the reviewed commit** (carried F5, `gitCommitSha`) | `installed_plugins.json`: `effortless@zenstudiolab` → `installPath …/cache/zenstudiolab/effortless/1.71.0`, `gitCommitSha 9c499da…`. Those 1 002 files are byte-identical to the fork at `9c499da` (`cmp`, 0 mismatches, 0 missing). The submodule gitlink and HEAD are both `9c499da`, with a clean worktree | Met |
+| **Pin changes are deliberate and gated** | This is the first pin, not a bump. The pinned commit is the wave 2 PASS commit: gate exit 0 at 0 incoming commits; locked lockdown run on HEAD 5/5 with integration executed | Met for the initial pin. The bump scenarios aren't exercised yet (see P3 a) |
+| **Only the listed plugin is installed** | `plugins` holds exactly `["effortless"]`. `installed_plugins.json` has no `textless@*`. `enabledPlugins` adds only `effortless@zenstudiolab` | Met |
+| **Marketplace location: local first** | Directory source at `/mnt/…/claude-toolsets` in `known_marketplaces.json` and `extraKnownMarketplaces`. The plugin itself is fetched from the GitHub URL at the pinned `sha`, not from the submodule worktree (design D6) | Met |
+
+### Other checks
+
+- **Lockdown at runtime.** The installed `hooks/register.tsx` contains `updatesLocked` (6 uses). `~/.claude/plugins/data/` holds only `context-mode-context-mode`. That means `effortless-release-check` does not exist, and `latestFromGit` would have created it before any `git fetch`. This independently backs the evidence in 3.3.
+- **Could upstream or textless code still be installed or loaded?**
+  - The installed copy has no `.mcp.json`, `agents/`, `skills/`, `output-styles/`, `settings.json`, `.lsp.json` or `bin/`. `hooks/hooks.json` loads only `./register.tsx`.
+  - The installed hooks read only `${$.plugin.root}/.claude-plugin/plugin.json` and `/bench/judge-cases.json` at runtime. They have no imports from `../textless`, `../site`, `../docs` or `../channels`, and no dynamic `import(`.
+  - The copy also carries `textless/plugin/.claude-plugin/plugin.json` and three marketplace manifests (the root one, `textless/` and `channels/dev/`, which point at `HeyCubit`). These are inert files, nested below the plugin root, and none of those marketplaces is registered. ADR-0001 already says never to add the fork as a marketplace.
+- **Global-config side effects.**
+  - `settings.json` gained only `enabledPlugins["effortless@zenstudiolab"]` and `extraKnownMarketplaces.zenstudiolab`.
+  - The evidence's semantic-equality check holds against the current file. The CLI reordered keys, but nothing else changed.
+  - There is no `autoUpdate` key and no `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS` env entry.
+  - `TYPESAFE_API_KEY` is unset in this environment (presence check only), so judge `auto` uses only Haiku. Jev stays opt-in, as the user decided (Q4).
+- **Staged scope.** `git diff --cached` contains `.claude-plugin/marketplace.json` (new, 22 lines) and the implementation review log. `.gitmodules`, the gitlink and the ADR were already committed (`0c7eae3`, `1179852`). The untracked `.claude/`, `.pi/`, `openspec/config.yaml`, `openspec/specs/` and `openspec/changes/archive/` are not staged.
+- **One file that isn't a mismatch.** The installed copy holds one extra file, `.in_use/97665`. It records `{"pid":97665,…}`, a live `claude` process about 76 s old. Claude Code writes this marker at runtime; it isn't plugin content.
+
+**Not covered:** the interactive desktop or terminal UI ("Check for updates" button; this is covered by the wave 2 locked test). How Claude Code's directory source behaves on `marketplace update` beyond what the listing shows. The wave 4 switch to GitHub.
+
+### Findings
+
+#### P3 — family `directory-source-reads-worktree` — in scope
+
+**Evidence:**
+- The marketplace source is a Folder (`known_marketplaces.json` gives `source.directory` = the `claude-toolsets` path). Claude Code reads `.claude-plugin/marketplace.json` from the working tree, not from a commit.
+- The current install came from a file that is staged but not yet committed. It will be committed after PASS, under the apply-loop rule.
+- So for future bumps, the spec requirement "Pin changes are deliberate and gated" ("…only in its own commit") is held by operator discipline, not by mechanism. An uncommitted edit to `sha` would go live on the next `claude plugin marketplace update zenstudiolab`.
+
+**DEFERRED_REASON:**
+- There is a single operator, and the initial pin breaks no requirement.
+- Wave 4 (task 4.2) replaces the folder source with the GitHub-hosted repo, which serves only pushed commits. That closes the gap without adding any tooling.
+
+#### P3 — family `terminal-function-hooks-env` — in scope
+
+**Evidence:**
+- The 3.3 live checks set `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1` for each command only.
+- `~/.claude/settings.json` has no such env entry.
+- The fork's README ("In the terminal") says the terminal CLI may not load the plugin's code without that entry. Interactive terminal sessions may therefore show "the mod is not loaded".
+
+**DEFERRED_REASON:**
+- This doesn't affect any security or pin requirement: an unloaded plugin is the safe direction.
+- Adding the env entry would be a global-config change outside approval (d). Tell the operator, and let them decide whether to add it.
+
+#### P3 — family `staging-criterion-wording` — in scope
+
+**Evidence:**
+- The verify text of task 3.4 expects `git status --short` to show `.gitmodules`, `plugins/effortless`, `.claude-plugin/marketplace.json` and `docs/adr/0001-*.md` staged.
+- What is actually staged is `.claude-plugin/marketplace.json` plus the review log, because the other paths were committed in waves 1 and 2.
+- The 3.4 evidence explains this.
+
+**SUGGESTED_CORRECTION:** In the caller assessment, record 3.4 as met by the earlier commits plus the staged marketplace file. No artifact or state change is needed.
+
+### Proposal rationale
+
+- **No blockers.** I found nothing at P0 to P2, and the carried F5 check passed.
+- **Wave 3 meets the spec.** All six `vetted-plugin-marketplace` requirements are met for the initial pin. The installed copy is byte-identical to the reviewed fork commit and is pinned through `gitCommitSha`. No upstream, `effortless`-named or textless marketplace or plugin is registered or loadable.
+- **The P3s need no edits now.** Each is either a disclosure or something wave 4 resolves.
+
+PROPOSED_REVIEW_ACTION=PASS
+---
+
+## Caller Assessment — Round 1 (Wave 3)
+
+- **P3 `directory-source-reads-worktree`:** `DEFER_OUT_OF_SCOPE`. Wave 4 (task 4.2) replaces the folder source with the GitHub-hosted repo, which serves only pushed commits. Until then the pin rule is kept by operator discipline: a single operator, and the pin is committed in this wave.
+- **P3 `terminal-function-hooks-env`:** `ACCEPT_NONBLOCKING`. **CORRECTION:** disclose this to the operator. Adding `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1` to `settings.json` `env` is the operator's choice; no state change is made.
+- **P3 `staging-criterion-wording`:** `ACCEPT_NONBLOCKING`. **CORRECTION:** 3.4 is recorded as met by `0c7eae3` and `1179852` (`.gitmodules`, gitlink, ADR) plus the staged `.claude-plugin/marketplace.json` and review log.
+- **Terminal baseline validation:** the staged content and the install state are unchanged since the review: same pin `9c499da` and same `gitCommitSha`.
+- **Dispatch budget:** `DISPATCH_BUDGET wave 3: oracle=1/1 others=0/3`
+
+REVIEW_ACTION=PASS
+CONSENSUS_STATUS=MOSTLY_GOOD
+
+---
