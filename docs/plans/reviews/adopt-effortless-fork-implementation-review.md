@@ -464,3 +464,134 @@ REVIEW_ACTION=PASS
 CONSENSUS_STATUS=MOSTLY_GOOD
 
 ---
+
+## Wave 4 Review Sequence
+
+## Round 1 - Implementation Assignments
+
+- **Wave:** 4.x
+- **Final gate reserved:** task 4.3, the Oracle wave gate (`oracle`) for wave 4.
+- **Owner mapping:** 4.1 and 4.2 are Orchestrator-owned (outward-facing actions and `~/.claude` changes). `DISPATCH_BUDGET wave 4: others=0/3` before the gate.
+
+### 4.1 — Publish `claude-toolsets` (Orchestrator)
+- **Approval:** presented with the exact list of what would go public (tracked paths, the commit author `zenji <canhtoannguyen60@gmail.com>`, local paths in the review logs, and the untracked folders kept off GitHub; carried F7). The operator chose "public" (option 2: public, as listed).
+- **Commands:**
+  - `gh repo create ZenStudioLab/claude-toolsets --public --source . --remote origin --description …`;
+  - `git -c credential.helper= -c 'credential.helper=!gh auth git-credential' push -u origin master`, with the `gh` credentials used for this one command only.
+- **Result:** `gh api` reports `visibility: public`, `default_branch: master`. `git ls-remote origin` shows `refs/heads/master` = `ae45155cfa6cd494cb4ca1b9cc994a5272621f23`, equal to the local HEAD. The pushed commits are `0c7eae3`, `1179852` and `ae45155`. The untracked `.claude/`, `.pi/`, `openspec/config.yaml`, `openspec/specs/` and `openspec/changes/archive/` were not pushed.
+
+### 4.2 — Switch the marketplace to GitHub (Orchestrator)
+- **Switch:** ran `claude plugin marketplace remove zenstudiolab`, which also uninstalled `effortless@zenstudiolab` as the CLI warned. Then `claude plugin marketplace add ZenStudioLab/claude-toolsets` reported "Successfully added marketplace: zenstudiolab (declared in user settings)", and `claude plugin install effortless@zenstudiolab` reported success.
+- **Marketplace source:** `claude plugin marketplace list` shows `zenstudiolab` with "Source: GitHub (ZenStudioLab/claude-toolsets)". `known_marketplaces.json` has `zenstudiolab` with `{source: github, repo: ZenStudioLab/claude-toolsets}`, and `settings.json` `extraKnownMarketplaces.zenstudiolab` matches.
+- **Pin (carried F5):** `installed_plugins.json` gives `effortless@zenstudiolab` → `installPath …/cache/zenstudiolab/effortless/1.71.0`, `gitCommitSha` `9c499da6d133fcac0e0c01636bbf0bf56ed9feec`. That is the same pin as in 3.2.
+- **Content check:** all 1002 tracked files at fork HEAD are byte-identical to the reinstalled copy (`cmp`, 0 mismatches).
+- **Settings:** `settings.json` is unchanged apart from the `zenstudiolab` source moving from directory to github (Python equality check: `True`). `enabledPlugins["effortless@zenstudiolab"]` is `true` again.
+- **Running plugin:**
+  - `claude plugin update effortless@zenstudiolab` reports "already at the latest version (1.71.0)";
+  - `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 claude -p "/effortless update"` returns "updates are managed by the pinned zenstudiolab marketplace";
+  - `~/.claude/plugins/data/effortless-release-check` still does not exist.
+- **Closes wave 3 P3 `directory-source-reads-worktree`:** the marketplace now serves only pushed commits.
+- **Side effect:** the uninstall cleared the plugin's saved options. None had been set: the CLI reported 16 unset both before and after.
+
+## Round 1 - Oracle Review
+
+**Mode:** `FULL`. **Reviewer:** `oracle`. **Gate task:** "4.3 Oracle wave gate (`oracle`) for wave 4: review the published marketplace switch against the "Marketplace location" requirement, following the wave-gate rules above."
+
+**Owner mapping reviewed:**
+- 4.1, publish `claude-toolsets`: Orchestrator.
+- 4.2, switch the marketplace to GitHub and reinstall: Orchestrator.
+- No delegated workers.
+
+I loaded `review-convergence` before reviewing. All checks were read-only: nothing installed, updated, removed, pushed or run.
+
+**Frozen target:**
+- Published repo `ZenStudioLab/claude-toolsets` at `ae45155cfa6cd494cb4ca1b9cc994a5272621f23`.
+- The `zenstudiolab` entries in `~/.claude`.
+- The installed `effortless@zenstudiolab`.
+- The wave 4 evidence section of the implementation review log.
+
+### Coverage: spec requirements against what I observed
+
+The governing source is `vetted-plugin-marketplace`, requirement "Marketplace location", together with carried items F5 and F7.
+
+| Check | Evidence | Result |
+|---|---|---|
+| Repo is published and public (4.1) | `gh api repos/ZenStudioLab/claude-toolsets` reports `visibility: public`, `private: false`, `default_branch: master`, `fork: false` | Met |
+| Remote equals local HEAD | `git ls-remote` gives `HEAD` and `refs/heads/master` = `ae45155cfa6cd494cb4ca1b9cc994a5272621f23`; local `git rev-parse HEAD` is the same | Met |
+| What was published matches the approved list (F7) | `git ls-tree -r --name-only HEAD` lists exactly 12 entries (below), all named in the approval prompt. The untracked `.claude/`, `.pi/`, `openspec/config.yaml`, `openspec/specs/` and `openspec/changes/archive/` are absent from the tree | Met |
+| No secrets published | `git grep` over HEAD for token, key, private-key and password signatures (`ghp_`, `github_pat_`, `sk-ant-`, `AKIA…`, `BEGIN … PRIVATE KEY`, `xox[bp]-`, `password[:=]`, bearer strings, `TYPESAFE_API_KEY=`/`GITHUB_TOKEN=` assignments) finds 0 hits. No email address appears in file contents | Met |
+| Disclosed data is public | Local paths `/home/zenji`/`/mnt/031D…` appear in 3 lines of the implementation review log and 1 line of `tasks.md`. The commit author `zenji <canhtoannguyen60@gmail.com>` is on all 3 commits. Both were in the approved list | Met (disclosed) |
+| Same name, now GitHub-hosted (4.2) | `claude plugin marketplace list` shows `zenstudiolab` with source "GitHub (ZenStudioLab/claude-toolsets)". In `known_marketplaces.json`, `zenstudiolab` = `{github, ZenStudioLab/claude-toolsets}`. `settings.json` `extraKnownMarketplaces.zenstudiolab` matches. No directory-source entry remains | Met |
+| The served marketplace carries the same pin | `~/.claude/plugins/marketplaces/zenstudiolab` is a checkout of `origin https://github.com/ZenStudioLab/claude-toolsets.git` at `ae45155`. Its `.claude-plugin/marketplace.json` lists only `effortless` with `{url: https://github.com/ZenStudioLab/effortless.git, sha: 9c499da6d133fcac0e0c01636bbf0bf56ed9feec}` and no `ref`. That is byte-for-byte the pin committed at HEAD | Met |
+| Installed `effortless` stays at the same pinned `sha` (F5) | `installed_plugins.json` gives `effortless@zenstudiolab` → `installPath …/cache/zenstudiolab/effortless/1.71.0`, `gitCommitSha 9c499da6d133fcac0e0c01636bbf0bf56ed9feec`. That matches wave 3 | Met |
+| The installed copy is the reviewed commit | All 1002 blobs in `git ls-tree 9c499da` compare equal to the installed files (`git cat-file -p` against `cmp`): 0 mismatches. The only extra file is the runtime marker `.in_use/118094`. `updatesLocked` appears 6 times in the installed `hooks/register.tsx`. The submodule HEAD is `9c499da` with a clean worktree, and the root gitlink is `9c499da` | Met |
+| No upstream or textless install path | Known marketplaces are `brag`, `claude-plugins-official`, `context-mode`, `hyperframes` and `zenstudiolab`, with no `effortless`/`effortless-dev`/HeyCubit marketplace. No `textless@*` is installed or enabled. `~/.claude/plugins/data/` holds only `context-mode-context-mode`, so `effortless-release-check` was never created | Met |
+| Global config is limited | Only `enabledPlugins["effortless@zenstudiolab"]=true` and `extraKnownMarketplaces.zenstudiolab` exist. There are no `autoUpdate` keys and no `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS` env entry | Met |
+| Wave 3 P3 `directory-source-reads-worktree` is closed | The marketplace is now served from a pushed GitHub commit, not from the working tree | Met |
+
+Published tree: `.claude-plugin/marketplace.json`, `.gitmodules`, `docs/adr/0001-pinned-forks-for-third-party-plugins.md`, both review logs, the 7 change files under `openspec/changes/adopt-effortless-fork/`, and the gitlink `plugins/effortless` → `9c499da`.
+
+**Not covered:**
+- The interactive UI, which wave 2's locked tests cover.
+- Claude Code's default auto-update policy for third-party GitHub marketplaces, which I didn't verify. `known_marketplaces.json` has no `autoUpdate` field. A pin change on the remote still needs a push to `ZenStudioLab/claude-toolsets` `master`, which is the deliberate step.
+- Anything the gitlink points at beyond `9c499da`, which waves 2 and 3 reviewed.
+
+### Findings
+
+#### P3 — family `wave4-evidence-unpublished` — in scope
+**Evidence:**
+- `git status --short` shows `M docs/plans/reviews/adopt-effortless-fork-implementation-review.md`, with 28 uncommitted lines: the "Wave 4 Review Sequence" evidence.
+- `tasks.md` 4.1–4.3 are still unchecked at HEAD.
+- So the public `master` (`ae45155`) has no wave 4 record yet.
+- Now that the marketplace serves GitHub `master`, every later push to `master` is also what `claude plugin marketplace update zenstudiolab` would serve. Under the pin rule, the review-log commit must not touch `.claude-plugin/marketplace.json`.
+
+**SUGGESTED_CORRECTION:**
+- After the caller's PASS, commit the review log and the `tasks.md` checkboxes.
+- Before pushing, verify `git diff ae45155 HEAD -- .claude-plugin/marketplace.json` is empty. Then push `master` and confirm `git ls-remote` equals the local HEAD.
+
+#### P3 — family `switch-transient-uninstall` — in scope
+**Evidence:**
+- The 4.2 log records that `claude plugin marketplace remove zenstudiolab` uninstalled `effortless@zenstudiolab` and cleared its saved options. The plugin was absent until the reinstall, from `06:27:06` to `06:27:49`.
+- The spec scenario "the installed `effortless` stays at the same pinned `sha`" holds in outcome: the same `gitCommitSha` was reinstalled. It was not continuous.
+- No options had been set: "16 userConfig options not yet set" both before and after.
+
+**DEFERRED_REASON:**
+- The end state meets the requirement.
+- Nothing was lost and no other code ran in that window.
+- Claude Code offers no in-place source swap, so documenting it is enough. Tell the operator that any options set later would be lost on a future marketplace re-add.
+
+#### P3 — family `public-repo-pin-authority` — in scope
+**Evidence:**
+- With a GitHub source, anyone with push rights to `ZenStudioLab/claude-toolsets` `master` controls the served pin.
+- A history rewrite or force-push of `master` would change what `marketplace update` serves.
+- Branch protection on `master` was not checked (`gh api` gives only the repo-level fields above).
+
+**DEFERRED_REASON:**
+- There is a single owner, and the account itself is the trust boundary, as ADR-0001 states.
+- Adding branch protection would be a new outward-facing setting outside this change's approved scope.
+- Raise it with the operator as an optional hardening step, not as part of this wave.
+
+### Proposal rationale
+
+No P0, P1 or P2 finding:
+- The published repo is public, equals the local HEAD, and contains exactly the approved paths, with no secrets (F7).
+- The `zenstudiolab` marketplace keeps its name, is now served from GitHub at `ae45155`, and carries the identical full-`sha` pin.
+- The reinstalled `effortless@zenstudiolab` is at `gitCommitSha 9c499da` (F5), byte-identical to the reviewed fork commit, with no upstream or textless install path registered.
+
+The three P3s are a post-PASS commit-and-push step, a disclosure, and an optional hardening note.
+
+PROPOSED_REVIEW_ACTION=PASS
+---
+
+## Caller Assessment — Round 1 (Wave 4)
+
+- **P3 `wave4-evidence-unpublished`:** `ACCEPT_NONBLOCKING`. **CORRECTION:** after PASS, commit the review log and the `tasks.md` checkboxes. Check that `git diff ae45155 HEAD -- .claude-plugin/marketplace.json` is empty before the push, then confirm `git ls-remote` equals the local HEAD.
+- **P3 `switch-transient-uninstall`:** `ACCEPT_NONBLOCKING`. **CORRECTION:** disclose to the operator that re-adding the marketplace reinstalls the plugin and clears any options set by then.
+- **P3 `public-repo-pin-authority`:** `DEFER_OUT_OF_SCOPE`. Branch protection on `master` is optional hardening and an outward-facing setting outside this change's approval. It is offered to the operator, not applied.
+- **Terminal baseline validation:** the published HEAD `ae45155`, the served pin `9c499da` and the installed `gitCommitSha` are unchanged since the review. The only local change is this review log.
+- **Dispatch budget:** `DISPATCH_BUDGET wave 4: oracle=1/1 others=0/3`
+
+REVIEW_ACTION=PASS
+CONSENSUS_STATUS=MOSTLY_GOOD
+
+---

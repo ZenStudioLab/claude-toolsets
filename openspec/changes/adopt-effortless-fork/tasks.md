@@ -56,9 +56,9 @@ The Orchestrator owns ADR and spec edits, every outward-facing or global-config 
 
 ## 4. Switch the marketplace to the published `claude-toolsets` (Owner: Orchestrator)
 
-- [ ] 4.1 Ask the operator to choose a visibility for the `claude-toolsets` GitHub repository and to confirm creating it and pushing to it (outward-facing). After approval, make the first commit, create `ZenStudioLab/claude-toolsets` and push. Verify `git ls-remote origin` matches the local `HEAD`.
-- [ ] 4.2 Replace the local marketplace with the GitHub-hosted one under the same name: `claude plugin marketplace remove zenstudiolab`, then `claude plugin marketplace add ZenStudioLab/claude-toolsets`, then reinstall `effortless@zenstudiolab` if Claude Code requires it. Verify that `known_marketplaces.json` shows the GitHub source for `zenstudiolab` and the installed `effortless` is at the same pinned `sha` as in 3.2.
-- [ ] 4.3 Oracle wave gate (`oracle`) for wave 4: review the published marketplace switch against the "Marketplace location" requirement, following the wave-gate rules above.
+- [x] 4.1 Ask the operator to choose a visibility for the `claude-toolsets` GitHub repository and to confirm creating it and pushing to it (outward-facing). After approval, make the first commit, create `ZenStudioLab/claude-toolsets` and push. Verify `git ls-remote origin` matches the local `HEAD`.
+- [x] 4.2 Replace the local marketplace with the GitHub-hosted one under the same name: `claude plugin marketplace remove zenstudiolab`, then `claude plugin marketplace add ZenStudioLab/claude-toolsets`, then reinstall `effortless@zenstudiolab` if Claude Code requires it. Verify that `known_marketplaces.json` shows the GitHub source for `zenstudiolab` and the installed `effortless` is at the same pinned `sha` as in 3.2.
+- [x] 4.3 Oracle wave gate (`oracle`) for wave 4: review the published marketplace switch against the "Marketplace location" requirement, following the wave-gate rules above.
 
 ## Workflow follow-up
 
