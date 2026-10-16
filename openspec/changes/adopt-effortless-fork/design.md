@@ -49,7 +49,7 @@ Why identity rather than an always-on constant:
 - Any install under a different marketplace name, ours included, is locked. That is the safe direction.
 
 Alternatives:
-- *An always-on constant.* Rejected: it breaks about 50 upstream update tests, which we would then have to edit on every merge.
+- *An always-on constant.* Rejected: it breaks the upstream `describe('updates')` tests, which we would then have to edit on every merge.
 - *An environment-variable switch.* Rejected: it gives a second way to turn updates back on.
 
 ### D3 — Lockdown test lives in fork-only files and runs under the locked identity

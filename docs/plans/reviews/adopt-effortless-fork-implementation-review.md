@@ -114,3 +114,222 @@ REVIEW_ACTION=PASS
 CONSENSUS_STATUS=MOSTLY_GOOD
 
 ---
+
+## Wave 2 Review Sequence
+
+## Round 1 - Implementation Assignments
+
+- **Wave:** 2.x
+- **Final gate reserved:** task 2.6, the Oracle wave gate (`oracle`) for wave 2.
+- **Ordered owner mapping:** 2.1 → 2.2 → 2.3 → 2.4 → 2.5 (commit) go to `worker` as one focus-grouped session, scoped to the `plugins/effortless` working tree. The 2.5 push stays with the Orchestrator.
+- **Owner override:** the 2.5 push to `ZenStudioLab/effortless` is deferred until after caller-owned `PASS` for wave 2, per the apply-loop rule to commit and publish after `PASS`. The worker commits locally only, so that review runs on the exact commit.
+- **Carried items routed here:** F14 (`/effortless card offer` → Update step in 2.3), F15 (path-conditional 2.3 criteria), F10 residual (`import(` pattern in 2.4).
+- **Orchestrator edit:** carried F6 wording applied in design D2 ("the upstream `describe('updates')` tests" replaces "about 50").
+
+### Wave 2 — interrupted worker run (reconciliation)
+- **Run:** `worker` run `64e768fa` stopped before finishing. Its transcript ends on a `tool_start` for a filesystem-wide `find /` with no matching `tool_end`, and there is no output or meta record. The async run is no longer known to the scheduler.
+- **Partial writes:** none. `plugins/effortless` is clean at `bfb85cd`, with no commits and no evidence subsection. Nothing was pushed.
+- **Corrective action:** the Orchestrator did the 2.1 harness discovery itself, through empirical probes, instead of resending the same open-ended search. A fresh `worker` then takes 2.2–2.5 with the 2.1 facts and an explicit ban on filesystem-wide searches.
+- **Dispatch count so far:** wave 2 has used `others=1/3` (the interrupted worker); the fresh worker makes it 2/3.
+
+### 2.1 — Decision gate (Orchestrator, owner override: the delegated attempt was interrupted)
+- **Method:** a throwaway probe plugin (Orchestrator-written code, not upstream) in `$(mktemp -d -p /tmp)/cache/zenstudiolab/probe/0.0.1/`, run with `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 claude plugin test <dir>`. Its `session.start` hook reads `${$.plugin.root}/probe-marker`, and the test intercepts `fs.read` to print the path. The probe folder was deleted afterwards.
+- **Findings:**
+  - The plugin sees `$.plugin.root` as the absolute folder given to `claude plugin test`, even when the argument is relative (`claude plugin test 0.0.1` from the parent folder). Inside a `cache/zenstudiolab/…` folder that root resolves to identity `zenstudiolab` under `pluginId`'s regex.
+  - Test options `{ plugin: { root } }`, `{ root }` and `{ pluginRoot }` do not change the root the plugin sees, so the harness has no override.
+  - The plugin module runs in its own sandbox: `globalThis` is not shared with the test, so assertions must go through intercepted engine calls (`fs.read`, `process.run`, `http.fetch`, `command.run`), as upstream's tests do.
+  - The hooks compiler only accepts `$.plugin.root` spelled exactly; `$.plugin?.root` or `($ as any).plugin…` is rejected ("$.plugin is used other than as $.plugin.name or $.plugin.root").
+  - The test's own first argument (`$`) has no `plugin` object.
+- **Decision:** D3 **path 2** (`tools/lockdown-test.sh` with a copy placed under `cache/zenstudiolab/effortless/<version>/`). Path 1 is unavailable.
+
+### Wave 2 worker evidence (transcribed by the Orchestrator)
+- **Run outcome:** `worker` run `b647862f` timed out after 1 800 000 ms, after committing and before writing its evidence. No restart was needed, because reconciliation shows 2.2–2.5 complete. The evidence below comes from the run's own logs (`/tmp/*.log`, the run's `output-0.log`) plus Orchestrator re-checks.
+- **Commits** (local in `plugins/effortless`, not pushed):
+  - `16d38d6` "Lock down self-update outside upstream's marketplaces, with a locked-run test [adopt-effortless-fork]";
+  - `9c499da` "Add the inspect-only upstream gate [adopt-effortless-fork]".
+  
+  The working tree is clean, only `main` exists (no throwaway branches left), and the `upstream` remote is `https://github.com/HeyCubit/effortless.git`.
+- **2.5 scope:** `git diff --stat bfb85cd HEAD` shows `hooks/register.tsx` (+14 -1), `tests/lockdown.test.ts` (+154), `tools/lockdown-test.sh` (+21) and `tools/upstream-gate.sh` (+70), exactly the four allowed files.
+- **2.2 diff:**
+  - `marketplaceOf(root)` is factored out of `pluginId` with the unchanged regex.
+  - `export const updatesLocked = (root) => !['effortless','effortless-dev'].includes(marketplaceOf(root))`.
+  - Early `return` at the top of `checkUpdate` and `runUpdate`.
+  - `checkUpdateNow` toasts `UPDATES_PINNED` and returns.
+  - `/effortless update` returns `{ text: UPDATES_PINNED }` ("effortless: updates are managed by the pinned zenstudiolab marketplace").
+  - No other hunks.
+- **2.3 tests:** `tests/lockdown.test.ts` holds one unit test, `updatesLocked` over the four roots plus Windows and `/work/effortless`, and four locked-only integration tests:
+  - timers and session start make no fetch or process call, and no update card appears;
+  - `/effortless update` is refused and starts nothing;
+  - "Check for updates" says so and starts nothing;
+  - the `/effortless card offer` → Update button installs, copies and reloads nothing (carried F14).
+  
+  When not locked, the integration tests log `lockdown integration skipped: …` and return. `tools/lockdown-test.sh` fails if that marker appears.
+- **Validation results:**
+
+  | Run | Result |
+  |---|---|
+  | Locked run (`tools/lockdown-test.sh`, `/tmp/locked-final.log`) | 5 pass / 0 fail; integration tests executed |
+  | `checkUpdate` guard removed (`/tmp/mut-checkUpdate.log`) | 1 pass / 4 fail (`git -C …/effortless-release-check fetch … stable` reappears). Restored |
+  | `runUpdate` guard removed (`/tmp/mut-runUpdate.log`) | 4 pass / 1 fail (the offer-card Update test). Restored |
+  | Unlocked full run with our changes (`/tmp/unlocked-run.log`) | 206 tests, 197 pass / 9 fail; lockdown integration reported skipped (4 markers) |
+  | Baseline at unmodified `bfb85cd` (`/tmp/baseline-run.log`) | 201 tests, 191 pass / 10 fail |
+
+  The unlocked run's 9 failures are a subset of the baseline's 10 (`comm`: no failure only in ours). They are pre-existing upstream timing-sensitive tests (5 s timeouts in cache countdown, dashboard, the settings panel, the handoff clipboard, and the Jev key file), not caused by this change. Carried F15 is applied with path-2 criteria.
+- **2.4 gate:**
+  - **Real upstream** (Orchestrator re-run, `/tmp/gate-now.log`): incoming commits 0 = `git rev-list --count HEAD..upstream/main` 0 (upstream `main` still `bfb85cd`), nothing flagged, exit 0.
+  - **Throwaway refs** (worker, `output-0.log` "gate-t1…t7"):
+
+    | Case | Flag | Exit |
+    |---|---|---|
+    | `$.process.run` in hooks | `[$.process]` | 1 |
+    | `runClaude(` | `[runclaude(]` | 1 |
+    | `import x from '../docs/x'` | `[import , docs/]` | 1 |
+    | new `.mcp.json` | new installed path + component file | 1 |
+    | new `bench/new-case.json` | new installed path | 1 |
+    | `tests/` only | host-run listing | 1 |
+    | `textless/` only | not loaded | 0 |
+
+  - **Extra demonstration:** against a diverged upstream ref, 56 flags and 8 host-run paths, exit 1.
+  - Carried F10 residual applied: the `import(` literal is in the pattern list.
+- **Caveats:**
+  - The upstream suite has 10 pre-existing timing failures at baseline, so `tools/test.sh` exits 1 on unmodified upstream too. The sync procedure must compare failures against the merged-upstream baseline rather than require exit 0.
+  - The script file modes are 100644, as upstream's own `tools/test.sh` is, so they are run with `bash tools/…`.
+
+## Round 1 - Oracle Review
+
+Mode: `FULL`, the first review of wave 2. Reviewer: `oracle`. I read everything without changing anything. The only commands I executed were the gate, `bash tools/upstream-gate.sh`, which only reads, and four throwaway cases of the committed gate (`git show 9c499da:tools/upstream-gate.sh`), run inside a fresh upstream clone in `mktemp -d -p /tmp` that I deleted afterwards. I loaded `review-convergence` before reviewing.
+
+**Gate task consumed:** 2.6, the Oracle wave gate (`oracle`) for wave 2: review the fork diff, the lockdown test, the gate script and its recorded verification against the `effortless-fork-lockdown` spec, following the wave-gate rules.
+
+**Owner mapping reviewed:**
+- **2.1 (decision gate):** done by the Orchestrator (owner override; the first `worker` run, `64e768fa`, was interrupted). The decision was D3 path 2.
+- **2.2–2.5 (commits):** `worker` run `b647862f`, which timed out after committing; the Orchestrator transcribed its evidence. The commits `16d38d6` and `9c499da` sit on `bfb85cd`, local and not pushed. HEAD is `9c499da6d133fcac0e0c01636bbf0bf56ed9feec`, and the worktree is clean.
+- **2.5 push:** with the Orchestrator, after `PASS`.
+
+### Coverage
+
+**Every way into the updater is guarded.** In `hooks/register.tsx` at HEAD there are exactly 2 `$.http.fetch` calls (Jev `:724`, `latestAvailable` `:2687`), 4 `$.process.run` calls (`latestFromGit` ×2, `runClaude`, `syncRunningCopy`) and 3 `runClaude` callers (uninstall `:2529`, marketplace update `:2696`, runUpdate's step `:2851`).
+
+| Update entry point | Reaches | Guard at HEAD |
+|---|---|---|
+| 6-hour timer, `afterLoad` | `checkUpdate` → `latestAvailable` → `latestFromGit`, `RELEASES_URL`, `marketplace update effortless` | early `return` in `checkUpdate` |
+| "Check for updates" (`checkUpdateNow`) | `checkUpdate` | own guard (toast `UPDATES_PINNED`) plus `checkUpdate` |
+| `/effortless update` | `checkUpdate`, `runUpdate` | own guard (`{ text: UPDATES_PINNED }`) |
+| Card Update / Try again, settings-panel install | `runUpdate` → `runClaude` ×2, `syncRunningCopy` | early `return` in `runUpdate` |
+| `latestAvailable`, `syncRunningCopy` | only from `checkUpdate` (`:2770`) and `runUpdate` (`:2867`) | covered transitively |
+| Uninstall `runClaude` (`:2529`) | not an update path | intentionally unguarded (design Non-Goals) |
+
+**Diff scope (2.5).** `git diff --stat bfb85cd HEAD` lists exactly four files: `hooks/register.tsx` (+14 −1), `tests/lockdown.test.ts`, `tools/lockdown-test.sh` and `tools/upstream-gate.sh`. That matches the spec scenario "Diff against upstream stays small". The `register.tsx` hunks are only:
+- `UPDATES_PINNED`;
+- the three guards;
+- `marketplaceOf` (the same regex as before) and the export `updatesLocked`;
+- the locked reply in `/effortless update`.
+
+**The tests fail when a guard regresses.**
+- Removing the `checkUpdate` guard makes 4 of 5 locked tests fail (`/tmp/mut-checkUpdate.log`).
+- Removing the `runUpdate` guard makes the offer-card test fail (`/tmp/mut-runUpdate.log`). That is carried item F14, and it is effective.
+- The two locked replies are covered indirectly. Without them, the `/effortless update` test receives "…is the newest", which fails the `toContain(PINNED)` check. "Check for updates" would produce no `PINNED` toast, which also fails.
+- `claude plugin test` exits 1 on failure (output-0.log, lines 1520, 1696, 1808), and `tools/lockdown-test.sh` passes that on via `set -euo pipefail` and `tee`.
+
+**The skip mechanism doesn't hide a locked run.**
+- "Locked" is computed from the path the plugin actually reads (`manifestPath`). If that path isn't read, the test throws, so it fails closed.
+- `tools/lockdown-test.sh` fails if the `SKIPPED` line appears.
+- `/tmp/locked-final.log` (12:58:17, after the final `tests/lockdown.test.ts` at 12:57:50 and before the 12:58:28 commits) shows 5 passing with the integration tests executed.
+
+**The gate behaves as specified.**
+- Paths are read with `-z`, `--no-renames`, `--no-ext-diff` and `--no-textconv` (no external diff drivers run), and `--literal-pathspecs`. A bad ref exits 2, and a failed fetch exits non-zero under `set -e`.
+- The real run (`/tmp/gate-now.log`) shows 0 incoming commits, matching `git rev-list --count`, and exits 0.
+- The worker's cases t1–t7 behave as specified.
+- The committed gate, in my own re-run:
+
+  | Case | Result |
+  |---|---|
+  | Dynamic `import(` added | flagged, exit 1 (carried F10 residual, verified) |
+  | A `tokens` line added | flagged, exit 1 |
+  | Deleting `hooks/progress.tsx` | exit 0, not flagged |
+  | A missing ref | exit 2 |
+
+**Carried items.**
+- **F14:** applied and shown to catch a regression.
+- **F15:** applied, using the path-2 criteria.
+- **F10 residual:** applied (`import(` is in `LITERALS`).
+
+**Runtime reads (folder grouping check).** The hooks read only `${$.plugin.root}/.claude-plugin/plugin.json` and `/bench/judge-cases.json` at runtime. That confirms `docs/` and `site/` are really never loaded, and that `bench/` is correctly treated as installed.
+
+**Not covered:**
+- Re-running any test. I was not authorized to.
+- The content of `tests/lockdown.test.ts` before its 12:57:50 edit, which was the version used by the unlocked and mutation runs.
+
+### Findings
+
+#### P2 — family `full-suite-criterion-and-staleness` — in scope
+
+**Evidence:**
+- Task 2.3's first verification bullet requires "`tools/test.sh` passes". The unlocked run failed 9 of 206 (`/tmp/unlocked-run.log`), against a baseline at unmodified `bfb85cd` of 10 failures out of 201 (`/tmp/baseline-run.log`). No failure appears only in ours; they are upstream tests hitting the 5 s timeout. So the change causes no failures, but the criterion as written isn't met.
+- The evidence for that comparison is stale. `/tmp/unlocked-run.log` (12:47:51) and both mutation logs (12:54 and 12:55) predate the final `tests/lockdown.test.ts` (12:57:50) and the final `hooks/register.tsx` mtime (12:55:39, restored as identical content). Only the locked run is known to have used the committed test file.
+- The baseline is flaky: one failure ("a compact that fails says why in a toast") appears only in the baseline. A "subset of baseline failures" comparison can therefore misfire on future syncs.
+- The Workflow follow-up still implies `tools/test.sh` succeeds, but it exits 1 even on unmodified upstream.
+
+**SUGGESTED_CORRECTION:**
+- Before the 2.5 push, re-run `bash tools/test.sh` once on HEAD `9c499da` (approval (c) covers it). Record its failure list as a subset of the baseline list, with the lockdown integration tests reported as skipped.
+- Amend the wording of task 2.3 and the Workflow follow-up. "tools/test.sh passes" should become "`tools/test.sh` shows no failure that is absent from a baseline run of the same merged upstream commit (re-run a failing test alone if timing-sensitive); `tools/lockdown-test.sh` passes with integration executed".
+
+#### P3 — family `gate-signal-noise-and-deletions` — in scope
+
+**Evidence:**
+- The literal `token` matches 90 lines of `hooks/register.tsx` (usage and token accounting). My throwaway case `const t = tokens + 1` was flagged, so routine upstream edits will flag often.
+- Deleting an installed file (`D hooks/progress.tsx`) exits 0 with nothing flagged. A deletion adds no code, and the listing still shows it under "installed".
+
+**DEFERRED_REASON:**
+- The spec explicitly lists credentials words, so the noise is accepted review cost.
+- Deletions cannot introduce new code, and they appear in the installed listing.
+- Tightening either is optional and better done after the first real sync shows the actual flag volume. That fits the anti-bloat stance.
+
+#### P3 — family `locked-runner-zero-test-guard` — in scope
+
+**Evidence:**
+- `tools/lockdown-test.sh` fails only on the `SKIPPED` marker or a non-zero exit.
+- If the copy ever ended up with no test file (for example, `tests/lockdown.test.ts` untracked or renamed), the run might pass with nothing executed. Whether `claude plugin test` exits 0 for zero tests is unverified.
+- The file is currently tracked, so this can't happen today.
+
+**DEFERRED_REASON:** a hypothetical, with no current failure scenario. If it's wanted later, add one `grep -q 'locked install > the Update button'` line to the runner.
+
+#### P3 — family `locked-ux-wording` — in scope
+
+**Evidence:**
+- The spec scenario "Check for updates button" says "the button reports…". The implementation shows a toast (`checkUpdateNow` → `$.ui.toast(UPDATES_PINNED)`) instead.
+- On a locked install, `/effortless card offer` → Update now silently does nothing; there's no toast.
+
+**DEFERRED_REASON:** both are cosmetic. The observable no-network, no-process behavior the spec protects is met and tested, and adding UI would widen the fork's diff against upstream.
+
+### Proposal rationale
+
+- No P0 or P1 finding. Every update entry point is guarded, and the tests are shown to fail when a guard is removed.
+- The skip mechanism fails closed in the locked runner, and the gate meets the spec's grouping, flag and exit rules.
+- The diff stays within the four allowed files, and carried items F14, F15 and F10-residual are applied.
+- The P2 is a stale verification and an outdated wording of the criterion. It can be fixed with one re-run and a wording edit, and nothing in the code is wrong.
+
+PROPOSED_REVIEW_ACTION=PASS
+---
+
+## Caller Assessment — Round 1 (Wave 2)
+
+- **P2 `full-suite-criterion-and-staleness`:** `ACCEPT_NONBLOCKING`. No accepted blocking source: no code defect, and our changes produce no regression.
+  - **CORRECTION:** done before the push.
+    1. **Locked run on HEAD `9c499da`** (`/tmp/locked-head.log`): 5 pass / 0 fail, integration tests executed, exit 0.
+    2. **`bash tools/test.sh` on HEAD `9c499da`** (`/tmp/unlocked-head.log`): 206 tests, 197 pass / 9 fail, 4 "lockdown integration skipped" markers, exit 1. `comm` against the `bfb85cd` baseline failure list shows no failure absent from the baseline.
+    3. **Wording:** task 2.3's first verification bullet and the Workflow follow-up now state the criterion as no failure absent from a baseline run of the same upstream commit, with differing timing-sensitive tests re-run alone.
+- **P3 `gate-signal-noise-and-deletions`:** `DEFER_OUT_OF_SCOPE`. Reason as Oracle gave it: the spec lists credentials words, and deletions add no code. Revisit after the first real sync shows the actual flag volume.
+- **P3 `locked-runner-zero-test-guard`:** `DEFER_OUT_OF_SCOPE`. It is hypothetical, since the test file is tracked.
+- **P3 `locked-ux-wording`:** `ACCEPT_NONBLOCKING`. A toast counts as the "reports" outcome, and the protected no-network, no-process behaviour is tested. No UI is added, to keep the fork's diff against upstream small.
+- **Terminal baseline validation:** the fork HEAD is still `9c499da6d133fcac0e0c01636bbf0bf56ed9feec` with a clean worktree, the same as reviewed. The only bundle change since the review is the wording edit in `tasks.md`, which is part of the accepted correction. No code changed.
+- **Dispatch budget:** `DISPATCH_BUDGET wave 2: oracle=1/1 others=2/3`. The two were the interrupted worker `64e768fa` and the worker `b647862f`.
+
+REVIEW_ACTION=PASS
+CONSENSUS_STATUS=MOSTLY_GOOD
+
+---
+
+### 2.5 push (Orchestrator, after caller PASS)
+- Ran `git -c credential.helper= -c 'credential.helper=!gh auth git-credential' push origin main` in `plugins/effortless`. The `gh` credentials were used for this one command only; global config is unchanged.
+- The remote now shows `bfb85cd..9c499da`. `git ls-remote` reports `ZenStudioLab/effortless` `refs/heads/main` = `9c499da6d133fcac0e0c01636bbf0bf56ed9feec`, equal to the local HEAD.
